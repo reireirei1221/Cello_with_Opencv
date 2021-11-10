@@ -4,6 +4,7 @@ import time
 import subprocess
 import copy
 import numpy as np
+import math
 
 black = [0, 0, 0]
 white = [255, 255, 255]
@@ -58,10 +59,13 @@ cap = cv2.VideoCapture(0)
 mpHands = mp.solutions.hands
 hands = mpHands.Hands()
 mpDraw = mp.solutions.drawing_utils
+# 駒の位置
 cx_cello = 200
 cy_cello = 360
-
+# 弓の長さ
 bow_length = 400
+# プロセス
+pro = None
 
 string = None
 
@@ -89,9 +93,8 @@ while True:
 
 	img = img ^ cello_img
 
-	img = img & cello_bow_msk_img
-
-	img = img ^ cello_bow_img
+	# img = img & cello_bow_msk_img
+	# img = img ^ cello_bow_img
 
 	# # A線
 	# img = cv2.circle(img, (250, 80), 10, (255,255,255), thickness=2)
@@ -142,26 +145,47 @@ while True:
 				cx_17 = handLms.landmark[19].x * w
 				cy_17 = handLms.landmark[19].y * h
 
-				cx_hand = int((cx_5+cx_17)/2)
-				cy_hand = int((cy_5+cy_17)/2)
+				cx_hand = (cx_5+cx_17)/2
+				cy_hand = (cy_5+cy_17)/2
 
 				distance = ((cx_hand-cx_cello)**2 + (cy_hand-cy_cello)**2)**0.5
 
-				cx_bow = int((bow_length*cx_cello + (distance-bow_length)*cx_hand)/distance)
-				cy_bow = int((bow_length*cy_cello + (distance-bow_length)*cy_hand)/distance)
+				cx_bow = (bow_length*cx_cello + (distance-bow_length)*cx_hand)/distance
+				cy_bow = (bow_length*cy_cello + (distance-bow_length)*cy_hand)/distance
 
-				img = cv2.line(img, (cx_hand, cy_hand), (cx_bow, cy_bow), (116, 80, 48), 10)
+				# 弓の平行移動
+				mat_move = np.float32([[1,0,distance-300],[0,1,0]])
+				moved_cello_bow_img = cv2.warpAffine(cello_bow_img,mat_move,(g_w,g_h),borderValue=(0, 0, 0))
+				moved_cello_bow_msk_img = cv2.warpAffine(cello_bow_msk_img,mat_move,(g_w,g_h),borderValue=(255, 255, 255))
 
+				# 各座標のint型への変換
+				cx_hand = int(cx_hand)
+				cy_hand = int(cy_hand)
+				cx_bow = int(cx_bow)
+				cy_bow = int(cy_bow)
+
+				# 弓の回転
+				gradient = (cy_hand-cy_cello)/(cx_hand-cx_cello)
+				degree = math.degrees(math.atan(gradient))
+				mat_rotate = cv2.getRotationMatrix2D((cx_cello, cy_cello), -degree, 1)
+				rotated_cello_bow_img = cv2.warpAffine(moved_cello_bow_img, mat_rotate, (g_w, g_h), borderValue=(0, 0, 0))
+				rotated_cello_bow_msk_img = cv2.warpAffine(moved_cello_bow_msk_img, mat_rotate, (g_w, g_h), borderValue=(255, 255, 255))
+
+				img = img & rotated_cello_bow_msk_img
+				img = img ^ rotated_cello_bow_img
+
+				# img = cv2.line(img, (cx_hand, cy_hand), (cx_bow, cy_bow), (116, 80, 48), 10)
+				
 				if string != find_which_string(cx_hand, cy_hand):
 					string = find_which_string(cx_hand, cy_hand)
-					subprocess.Popen(['python3', 'sub.py', 'piano'])
+					if pro != None:
+						pro.terminate()
+					pro = subprocess.Popen(['python3', 'sub.py', 'violin'])
 					print(string)
 
-	img = cv2.line(img, (cx_cello+500, cy_cello-200), (cx_cello-500, cy_cello+200), (0, 0, 0), 1)
-
-	img = cv2.line(img, (cx_cello+500, cy_cello+200), (cx_cello-500, cy_cello-200), (0, 0, 0), 1)
-
-	img = cv2.line(img, (cx_cello-500, cy_cello), (cx_cello+500, cy_cello), (0, 0, 0), 1)
+	img = cv2.line(img, (cx_cello+500, cy_cello-200), (cx_cello-500, cy_cello+200), (255, 255, 255), 1)
+	img = cv2.line(img, (cx_cello+500, cy_cello+200), (cx_cello-500, cy_cello-200), (255, 255, 255), 1)
+	img = cv2.line(img, (cx_cello-500, cy_cello), (cx_cello+500, cy_cello), (255, 255, 255), 1)
 
 	# img = cv2.rectangle(img, (cx_cello-50, 20), (cx_cello+50, cy_cello-50), (0, 0, 0), -1)
 
@@ -169,7 +193,6 @@ while True:
 
 
 	# cv2.putText(img, "Hand Tracking Test", (10, 450), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 0), 2, cv2.LINE_AA)
-	
 	
 
 	cv2.imshow("Image", img)
